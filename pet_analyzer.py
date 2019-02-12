@@ -1,6 +1,6 @@
 import json
 import os
-
+from xgboost import XGBClassifier
 import pandas as pd
 
 
@@ -11,7 +11,6 @@ class ParameterMismatchError(Exception):
 
         # Now for your custom code...
         self.errors = errors
-
 
 class ExtractSentiment:
     def __init__(self):
@@ -37,7 +36,7 @@ class ExtractSentiment:
             rows_list.append(row)
 
         df = pd.DataFrame(rows_list)
-        df.to_csv(path + "sentiment_test.csv", encoding='utf-8', index=False)
+        # df.to_csv(path + "sentiment_test.csv", encoding='utf-8', index=False)
 
         return df
 
@@ -79,7 +78,7 @@ class PetDataLoader(ExtractSentiment):
         test_sent = self.get_sentiment(self.test_sent_path)
         return test_sent
 
-    def get_all_data(self, add_score=False, labels=False):
+    def get_all_data(self, add_score=False, labels=False, bin_fee=False):
         """
 
         :param add_score: add Sentiment Score. default : False
@@ -138,32 +137,59 @@ class PetDataLoader(ExtractSentiment):
         return data
 
 
-# class AdoptionPredictor(PetDataLoader):
-#
-#     def __init__(self):
-#         # super().__init__()
-#         pass
-#
-#     def one_hot_encoding(self):
-#         pass
-#
-#     # pca, rf
-#     def preprocess_pca(self):
-#         pass
-#
-#     def random_forest(self):
-#         pass
-#
-#     def decision_tree(self):
-#         pass
-#
-#     def gradient_boosting(self, params):
-#         pass
+class AdoptionPredictor:
+
+    def __init__(self, data):
+
+        available_feature = ["AdoptionSpeed", "Age", "Breed1", "Breed2", "Color1", "Color2", "Color3", "Dewormed",
+                             "Fee", "FurLength", "Gender", "Health", 'MaturitySize', "PhotoAmt", "Quantity", "State",
+                             "Sterilized", "Type", "Vaccinated", "VideoAmt", "is_train", "Magnitude", "Score",
+                             "SentimentScore"]
+
+        #data = data.loc(data.columns.isin([available_feature]))
+
+        data = data.drop(labels=["PetID", "RescuerID", "Description", "Name"], axis=1)
+
+        train = data[data['is_train'] == True]
+        self.target = train["AdoptionSpeed"]
+        self.train = train.drop(labels=["AdoptionSpeed", "is_train"], axis=1)
+
+        test = data[data['is_train'] == False]
+        self.test = test.drop(labels=["AdoptionSpeed", "is_train"], axis=1)
+
+    def one_hot_encoding(self):
+        pass
+
+    # pca, rf
+    def preprocess_pca(self):
+        pass
+
+    def random_forest(self):
+        pass
+
+    def decision_tree(self):
+        pass
+
+    def gradient_boosting(self, use_xgb=True):
+
+        if use_xgb:
+            print("#"*50)
+            print("Gradient Boosting using xgboost")
+            print("#" * 50)
+            xgb = XGBClassifier()
+            pred_xgb = xgb.fit(self.train, self.target).predict(self.test)
+
+        return pred_xgb
 
 
 if __name__ == "__main__":
     pa = PetDataLoader()
-    # d = pa.get_sentiment_data(merge_type="all")
-    d = pa.get_all_data(add_score=False, labels=True)
-    print(d.columns)
-    print(d)
+    d = pa.get_all_data(add_score=False, labels=False)
+
+    ap = AdoptionPredictor(d)
+    print(ap.train.head())
+    grad_pred = ap.gradient_boosting()
+    submission = pd.DataFrame({'PetID': d[d["is_train"] == False].PetID, 'AdoptionSpeed': grad_pred})
+    submission.head()
+
+    submission.to_csv('submission.csv', index=False)
