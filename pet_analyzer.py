@@ -1,8 +1,12 @@
 import json
 import os
-from xgboost import XGBClassifier
+import xgboost as xgb
 import pandas as pd
-
+from xgboost import XGBClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import cross_val_score, train_test_split
+# import autosklearn.classification
 
 class ParameterMismatchError(Exception):
     def __init__(self, message, errors):
@@ -11,6 +15,7 @@ class ParameterMismatchError(Exception):
 
         # Now for your custom code...
         self.errors = errors
+
 
 class ExtractSentiment:
     def __init__(self):
@@ -78,7 +83,7 @@ class PetDataLoader(ExtractSentiment):
         test_sent = self.get_sentiment(self.test_sent_path)
         return test_sent
 
-    def get_all_data(self, add_score=False, labels=False, bin_fee=False):
+    def get_all_data(self, sentiment=True, add_score=False, labels=False, bin_fee=False):
         """
 
         :param add_score: add Sentiment Score. default : False
@@ -91,15 +96,18 @@ class PetDataLoader(ExtractSentiment):
         test = test.assign(is_train=False)
         test = test.assign(AdoptionSpeed=9)
 
-        sentiment = self.get_train_sentiment().append(self.get_test_sentiment())
-
         data = pd.concat([train, test], sort=True)
 
-        data = pd.merge(data, sentiment, how="left", on="PetID")
-        data = data.fillna(0)
+        if sentiment:
+            sentiment = self.get_train_sentiment().append(self.get_test_sentiment())
+            data = pd.merge(data, sentiment, how="left", on="PetID")
+            data = data.fillna(0)
+            if add_score:
+                data['SentimentScore'] = data.Magnitude * data.Score
 
-        if add_score:
-            data['SentimentScore'] = data.Magnitude * data.Score
+
+
+
 
         if labels:
             color_labels = pd.read_csv(self.base + "/color_labels.csv")
@@ -140,13 +148,12 @@ class PetDataLoader(ExtractSentiment):
 class AdoptionPredictor:
 
     def __init__(self, data):
-
         available_feature = ["AdoptionSpeed", "Age", "Breed1", "Breed2", "Color1", "Color2", "Color3", "Dewormed",
                              "Fee", "FurLength", "Gender", "Health", 'MaturitySize', "PhotoAmt", "Quantity", "State",
                              "Sterilized", "Type", "Vaccinated", "VideoAmt", "is_train", "Magnitude", "Score",
                              "SentimentScore"]
 
-        #data = data.loc(data.columns.isin([available_feature]))
+        # data = data.loc(data.columns.isin([available_feature]))
 
         data = data.drop(labels=["PetID", "RescuerID", "Description", "Name"], axis=1)
 
@@ -157,39 +164,91 @@ class AdoptionPredictor:
         test = data[data['is_train'] == False]
         self.test = test.drop(labels=["AdoptionSpeed", "is_train"], axis=1)
 
-    def one_hot_encoding(self):
-        pass
-
     # pca, rf
     def preprocess_pca(self):
         pass
 
     def random_forest(self):
+        # clf = RandomForestClassifier()
         pass
 
     def decision_tree(self):
         pass
 
-    def gradient_boosting(self, use_xgb=True):
+    def boosting(self, use_xgb=True, submission=False, validation=True):
+        test = self.test
+        if submission:
+            train = self.train
+            target = self.target # train target
+            X_test = None
+            y_test = None
+        else:
+            train, X_test, target, y_test = train_test_split(self.train, self.target,
+                                                                test_size=0.3,
+                                                                random_state=42)
 
         if use_xgb:
-            print("#"*50)
+            print("#" * 50)
             print("Gradient Boosting using xgboost")
             print("#" * 50)
-            xgb = XGBClassifier()
-            pred_xgb = xgb.fit(self.train, self.target).predict(self.test)
 
-        return pred_xgb
+            xgb_classifier = XGBClassifier()
+            fitted_model = xgb_classifier.fit(train, target)
+        else:
+            model = GradientBoostingClassifier()
+            fitted_model = model.fit(train, target)
+
+        if validation:
+            self.validate_model(fitted_model, val_type="cv", X_test=X_test, y_test=y_test)
+
+        if submission:
+            return fitted_model.predict(test)
+        else:
+            return fitted_model
+
+    # model 넣고 train 정확도 출력
+    def validate_model(self, model, val_type="cv", X_test=None, y_test=None):
+        if not val_type in ["cv", ""]:
+            raise ParameterMismatchError("val type is not exist")
+
+        if X_test is None or y_test is None:
+            train = self.train
+            target = self.target
+        else:
+            train = X_test
+            target = y_test
+
+        print("#" * 50)
+        print("Validation Start")
+        print("#" * 50)
+
+        if val_type == "cv":
+            scores = cross_val_score(model, train, target, cv=5)
+            print("Accuracy: %0.5f (+/- %0.5f)" % (scores.mean(), scores.std() * 2))
+        else:
+            predict = model.predict(train)
+            score = accuracy_score(target, predict)
+
+            print("Accuracy: %0.5f " % score)
+
+    # def auto_sklearn(self):
+    #     cls = autosklearn.classification.AutoSklearnClassifier()
+    #     cls.fit(self.train, self.target)
+    #     predictions = cls.predict(self.test)
+    #
+    #     return predictions
 
 
 if __name__ == "__main__":
     pa = PetDataLoader()
-    d = pa.get_all_data(add_score=False, labels=False)
+    d = pa.get_all_data(sentiment=False, add_score=False, labels=False)
 
     ap = AdoptionPredictor(d)
     print(ap.train.head())
-    grad_pred = ap.gradient_boosting()
-    submission = pd.DataFrame({'PetID': d[d["is_train"] == False].PetID, 'AdoptionSpeed': grad_pred})
+    pred = ap.boosting(submission=True)
+    # pred = ap.auto_sklearn()
+
+    submission = pd.DataFrame({'PetID': d[d["is_train"] == False].PetID, 'AdoptionSpeed': pred})
     submission.head()
 
     submission.to_csv('submission.csv', index=False)
