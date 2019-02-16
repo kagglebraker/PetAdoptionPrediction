@@ -60,12 +60,17 @@ data = pdl.get_all_data() # type -> pandas.DataFrame
 ```
 import pet_analyzer
 
-ap = AdoptionPredictor()
+pdl = PetDataLoader()
+data = pdl.get_all_data()
+
+# 인스턴스 초기화 시, PetDataLoader를 이용해 가져온 데이터프레임을 파라미터로 넣어준다.
+ap = AdoptionPredictor(data)
+
 # boosting 모델을 불러올 때
-model = boosting(submission=False)
+model = ap.boosting(submission=False)
 
 # submission하기 위해 test 데이터를 예측한 결과를 리턴
-pred = boosting(submission=True)
+pred = ap.boosting(submission=True)
 ``` 
 
 * use_xgb : True인 경우 xgboost 라이브러리를 사용하여 모델을 만든다.

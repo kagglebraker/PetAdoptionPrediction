@@ -241,14 +241,20 @@ class AdoptionPredictor:
 
 if __name__ == "__main__":
     pa = PetDataLoader()
+    # Load Data
     d = pa.get_all_data(sentiment=False, add_score=False, labels=False)
 
+    # Instance Init
     ap = AdoptionPredictor(d)
     print(ap.train.head())
+
+    # get predicted class using boosting algorithm
     pred = ap.boosting(submission=True)
     # pred = ap.auto_sklearn()
 
+    # make dataframe for submission
     submission = pd.DataFrame({'PetID': d[d["is_train"] == False].PetID, 'AdoptionSpeed': pred})
     submission.head()
 
+    # submission
     submission.to_csv('submission.csv', index=False)
